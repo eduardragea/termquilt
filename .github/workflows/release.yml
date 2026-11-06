@@ -1,0 +1,34 @@
+name: Release
+
+# Builds on GitHub rather than on anyone's laptop, so a release can be traced to its tagged commit.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Only release what has reached main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Unit tests
+        run: swift test
+      - name: Build the release and test the installer against it
+        run: make test-install
+      - name: Check the tag matches the program's version
+        run: |
+          version="$(.build/apple/Products/Release/termquilt --version)"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag is $GITHUB_REF_NAME but the program says $version." >&2
+            exit 1
+          fi
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
