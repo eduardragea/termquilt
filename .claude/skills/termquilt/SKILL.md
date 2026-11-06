@@ -10,10 +10,11 @@ The user talks, you run `termquilt`, and you tell them what changed in plain wor
 
 Moving windows is harmless and one step from undone, so act right away. Don't ask first and don't preview, unless they ask what something would do.
 
-Two rules keep this free of permission prompts, which is the whole point:
+Keeping this free of permission prompts is the whole point:
 
-- **Invoke this skill on every request, including follow-ups like "a bit more".** Even if you ran it a moment ago, invoke it again before running `termquilt`, because its permission ends with each turn.
 - **Run each command exactly as written below, on its own.** Adding `2>&1`, `||`, `;`, pipes or `echo` needs approval, and so does checking for the program first with `ls` or `which`. Just run it.
+- **In Claude Code, invoke this skill on every request, including follow-ups like "a bit more".** Even if you ran it a moment ago, invoke it again before running `termquilt`, because its permission ends with each turn.
+- **In Codex, always run `termquilt` outside the sandbox.** Ask for escalated permissions on the very first try, with a short reason like "move the terminal windows", because the sandbox blocks controlling other apps and it can't work there.
 
 ## What they say, what to run
 
@@ -32,7 +33,8 @@ Two rules keep this free of permission prompts, which is the whole point:
 | "put them back", "undo that" | `termquilt undo` |
 | "what would that do?" | The same command with `--dry-run`. `undo` and `hotkeys` have no preview, so say what they'd do instead |
 | "turn on the hotkeys" | `termquilt hotkeys install` |
-| "stop asking me for permission" | Add `"Bash(termquilt *)"` to `permissions.allow` in `~/.claude/settings.json`, keeping everything already there |
+| "stop asking me for permission", in Claude Code | Add `"Bash(termquilt *)"` to `permissions.allow` in `~/.claude/settings.json`, keeping everything already there |
+| "stop asking me for permission", in Codex | Add the line `prefix_rule(pattern=["termquilt"], decision="allow")` to `~/.codex/rules/default.rules`, keeping everything already there, then tell them to restart Codex |
 
 For "a bit more" or "too far", repeat or reverse the last change.
 
@@ -49,7 +51,8 @@ The terminal you're running in is usually one of those being arranged, so it may
 ## If something goes wrong
 
 - **`termquilt` isn't found.** Run the same command again as `~/.local/bin/termquilt`, and use that form for the rest of the conversation. It's usually there, just not on their PATH, so suggest adding `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`.
-- **`~/.local/bin/termquilt` isn't found either.** Now it really is missing. Tell them you're downloading it, run `curl -fsSL https://raw.githubusercontent.com/eduardragea/termquilt/main/install.sh | bash`, then do what they asked.
+- **`~/.local/bin/termquilt` isn't found either.** Now it really is missing. Tell them you're downloading it, run `curl -fsSL https://raw.githubusercontent.com/eduardragea/termquilt/main/install.sh | bash` (outside the sandbox, in Codex), then do what they asked.
+- **"termquilt can't work inside Codex's sandbox".** Run the same command again outside the sandbox.
 - **macOS blocked it from controlling a terminal.** Tell them to click Allow on the prompt, or to turn it on in System Settings > Privacy & Security > Automation, then try again.
 - **It needs Accessibility permission.** Ghostty, kitty, WezTerm, Alacritty and Warp can only be moved that way. Tell them to turn it on for the app they're running in, under System Settings > Privacy & Security > Accessibility, then try again.
 - **"No supported terminal is running", or no windows found.** They may be in a terminal inside VS Code or Cursor, which isn't a separate window. Say that plainly.

@@ -1,5 +1,6 @@
 PREFIX ?= $(HOME)/.local
-SKILL_LINK := $(HOME)/.claude/skills/termquilt
+CLAUDE_SKILL_LINK := $(HOME)/.claude/skills/termquilt
+CODEX_SKILL_LINK := $(HOME)/.agents/skills/termquilt
 
 UNIVERSAL_BINARY := .build/apple/Products/Release/termquilt
 ARCHIVE := termquilt-macos.tar.gz
@@ -42,13 +43,21 @@ install: build
 uninstall:
 	rm -f "$(PREFIX)/bin/termquilt"
 
-# The skill already works inside this repo. This makes it available from every folder.
+# Links the skill in this repo into Claude Code and Codex, so it works from every folder and edits
+# apply at once.
 install-skill:
-	@if [ -e "$(SKILL_LINK)" ] && [ ! -L "$(SKILL_LINK)" ]; then \
-		echo "$(SKILL_LINK) already exists and isn't a link, so it was left alone."; exit 1; \
-	fi
-	install -d "$(dir $(SKILL_LINK))"
-	ln -sfn "$(CURDIR)/.claude/skills/termquilt" "$(SKILL_LINK)"
+	@for link in "$(CLAUDE_SKILL_LINK)" "$(CODEX_SKILL_LINK)"; do \
+		if [ -e "$$link" ] && [ ! -L "$$link" ]; then \
+			echo "$$link already exists and isn't a link, so it was left alone."; exit 1; \
+		fi; \
+		install -d "$$(dirname "$$link")" || exit 1; \
+	done
+	@for link in "$(CLAUDE_SKILL_LINK)" "$(CODEX_SKILL_LINK)"; do \
+		ln -sfn "$(CURDIR)/.claude/skills/termquilt" "$$link" || exit 1; \
+		echo "linked $$link"; \
+	done
 
 uninstall-skill:
-	@if [ -L "$(SKILL_LINK)" ]; then rm "$(SKILL_LINK)"; fi
+	@for link in "$(CLAUDE_SKILL_LINK)" "$(CODEX_SKILL_LINK)"; do \
+		if [ -L "$$link" ]; then rm "$$link"; fi; \
+	done

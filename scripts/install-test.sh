@@ -25,7 +25,8 @@ run_installer() {
 }
 
 expect_nothing_installed() {
-  [[ ! -e "$1/.local/bin/termquilt" && ! -e "$1/.local/bin/.termquilt.new" && ! -e "$1/.claude/skills/termquilt" ]] \
+  [[ ! -e "$1/.local/bin/termquilt" && ! -e "$1/.local/bin/.termquilt.new" \
+    && ! -e "$1/.claude/skills/termquilt" && ! -e "$1/.agents/skills/termquilt" ]] \
     || fail "$2 left files behind"
 }
 
@@ -53,9 +54,11 @@ HOME_DIR="$(fresh_home)"
 OUT="$(run_installer "$HOME_DIR" "$DIST")"
 "$HOME_DIR/.local/bin/termquilt" --version >/dev/null || fail "the installed program doesn't run"
 pass "installs a program that runs"
-grep -q '^name: termquilt$' "$HOME_DIR/.claude/skills/termquilt/SKILL.md" || fail "the skill wasn't installed"
-pass "installs the skill"
-[[ "$OUT" == *"tidy my terminals"* && "$OUT" == *"/reload-skills"* ]] || fail "no next steps: $OUT"
+grep -q '^name: termquilt$' "$HOME_DIR/.claude/skills/termquilt/SKILL.md" || fail "the skill wasn't installed for Claude Code"
+pass "installs the skill for Claude Code"
+grep -q '^name: termquilt$' "$HOME_DIR/.agents/skills/termquilt/SKILL.md" || fail "the skill wasn't installed for Codex"
+pass "installs the skill for Codex"
+[[ "$OUT" == *"tidy my terminals"* && "$OUT" == *"/reload-skills"* && "$OUT" == *"sandbox"* ]] || fail "no next steps: $OUT"
 pass "says what to do next"
 [[ "$OUT" == *"isn't on your PATH"* ]] || fail "no PATH advice: $OUT"
 pass "explains how to fix PATH when it's missing"
@@ -70,8 +73,9 @@ echo "Updating"
 NEWER="$(fake_release 9.9.9 0)"
 OUT="$(run_installer "$HOME_DIR" "$NEWER")"
 [[ "$("$HOME_DIR/.local/bin/termquilt" --version)" == "9.9.9" ]] || fail "the program wasn't updated"
-[[ "$(cat "$HOME_DIR/.claude/skills/termquilt/SKILL.md")" == "skill for 9.9.9" ]] || fail "the skill wasn't updated"
-pass "installing again replaces the program and the skill"
+[[ "$(cat "$HOME_DIR/.claude/skills/termquilt/SKILL.md")" == "skill for 9.9.9" ]] || fail "the Claude Code skill wasn't updated"
+[[ "$(cat "$HOME_DIR/.agents/skills/termquilt/SKILL.md")" == "skill for 9.9.9" ]] || fail "the Codex skill wasn't updated"
+pass "installing again replaces the program and both skills"
 [[ ! -e "$HOME_DIR/.local/bin/hotkey-calls" ]] || fail "it touched hotkeys that were never turned on"
 pass "leaves hotkeys alone if they were never turned on"
 
@@ -94,7 +98,15 @@ env HOME="$HOME_DIR" PATH=/usr/bin:/bin:/usr/sbin:/sbin CLAUDE_CONFIG_DIR="$CLAU
   bash -s < "$INSTALLER" >/dev/null 2>&1
 [[ -f "$CLAUDE_DIR/skills/termquilt/SKILL.md" ]] || fail "CLAUDE_CONFIG_DIR was ignored"
 [[ ! -e "$HOME_DIR/.claude" ]] || fail "it also wrote to ~/.claude"
-pass "puts the skill where CLAUDE_CONFIG_DIR says, and only there"
+pass "puts the Claude Code skill where CLAUDE_CONFIG_DIR says, and only there"
+[[ -f "$HOME_DIR/.agents/skills/termquilt/SKILL.md" ]] || fail "the Codex skill went missing"
+pass "and still installs the Codex skill"
+
+HOME_DIR="$(fresh_home)"
+env HOME="$HOME_DIR" PATH=/usr/bin:/bin:/usr/sbin:/sbin CLAUDE_CONFIG_DIR="$HOME_DIR/.agents" TERMQUILT_RELEASE_URL="file://$DIST" \
+  bash -s < "$INSTALLER" >/dev/null 2>&1 || fail "both tools sharing a folder broke the install"
+[[ -x "$HOME_DIR/.local/bin/termquilt" && -f "$HOME_DIR/.agents/skills/termquilt/SKILL.md" ]] || fail "sharing a folder left it half-installed"
+pass "copes with both tools sharing a folder"
 
 echo "A developer's linked skill"
 HOME_DIR="$(fresh_home)"
@@ -105,6 +117,17 @@ ln -s "$LINKED" "$HOME_DIR/.claude/skills/termquilt"
 OUT="$(run_installer "$HOME_DIR" "$DIST")"
 [[ "$(cat "$LINKED/SKILL.md")" == "my edits" && -L "$HOME_DIR/.claude/skills/termquilt" ]] || fail "it overwrote a linked skill"
 pass "leaves it alone"
+[[ -f "$HOME_DIR/.agents/skills/termquilt/SKILL.md" ]] || fail "a linked Claude skill stopped the Codex one"
+pass "and still installs the Codex skill"
+
+HOME_DIR="$(fresh_home)"
+LINKED="$(fresh_home)"
+echo "my edits" > "$LINKED/SKILL.md"
+mkdir -p "$HOME_DIR/.agents/skills"
+ln -s "$LINKED" "$HOME_DIR/.agents/skills/termquilt"
+run_installer "$HOME_DIR" "$DIST" >/dev/null
+[[ "$(cat "$LINKED/SKILL.md")" == "my edits" && -L "$HOME_DIR/.agents/skills/termquilt" ]] || fail "it overwrote a linked Codex skill"
+pass "does the same for a linked Codex skill"
 
 echo "Bad downloads"
 HOME_DIR="$(fresh_home)"
@@ -156,7 +179,26 @@ touch "$HOME_DIR/.claude/skills"
 if OUT="$(run_installer "$HOME_DIR" "$DIST")"; then fail "a blocked skills folder should fail"; fi
 [[ "$OUT" == *"Nothing was installed"* ]] || fail "unclear message: $OUT"
 [[ ! -e "$HOME_DIR/.local/bin/termquilt" && ! -e "$HOME_DIR/.local/bin/.termquilt.new" ]] || fail "it installed the program without the skill"
-pass "a blocked skills folder fails clearly and doesn't install half of it"
+pass "a blocked Claude Code skills folder fails clearly and doesn't install half of it"
+
+HOME_DIR="$(fresh_home)"
+mkdir -p "$HOME_DIR/.agents"
+touch "$HOME_DIR/.agents/skills"
+if OUT="$(run_installer "$HOME_DIR" "$DIST")"; then fail "a blocked Codex skills folder should fail"; fi
+[[ "$OUT" == *"Nothing was installed"* ]] || fail "unclear message: $OUT"
+[[ ! -e "$HOME_DIR/.local/bin/termquilt" && ! -e "$HOME_DIR/.claude/skills/termquilt" ]] || fail "it installed part of it"
+pass "a blocked Codex skills folder fails clearly and doesn't install half of it"
+
+HOME_DIR="$(fresh_home)"
+mkdir -p "$HOME_DIR/.claude/skills/termquilt" "$HOME_DIR/.local/bin"
+echo "skill for 1.0.0" > "$HOME_DIR/.claude/skills/termquilt/SKILL.md"
+cp "$(fake_release 1.0.0 0)/termquilt" "$HOME_DIR/.local/bin/termquilt"
+touch "$HOME_DIR/.agents"
+if OUT="$(run_installer "$HOME_DIR" "$(fake_release 2.0.0 0)")"; then fail "a blocked update should fail"; fi
+[[ "$(cat "$HOME_DIR/.claude/skills/termquilt/SKILL.md")" == "skill for 1.0.0" ]] || fail "a failed update changed the existing skill"
+[[ "$("$HOME_DIR/.local/bin/termquilt" --version)" == "1.0.0" ]] || fail "a failed update changed the existing program"
+[[ ! -e "$HOME_DIR/.claude/skills/termquilt/.SKILL.md.new" ]] || fail "a failed update left a stray file"
+pass "a failed update leaves the existing install exactly as it was"
 
 HOME_DIR="$(fresh_home)"
 mkdir -p "$HOME_DIR/.local"
@@ -184,13 +226,14 @@ HOME_DIR="$(fresh_home)"
 run_installer "$HOME_DIR" "$DIST" >/dev/null
 mkdir -p "$HOME_DIR/.config/termquilt"
 echo '{}' > "$HOME_DIR/.config/termquilt/preferences.json"
-mkdir -p "$HOME_DIR/keep-me" "$HOME_DIR/.claude/skills/another-skill"
+mkdir -p "$HOME_DIR/keep-me" "$HOME_DIR/.claude/skills/another-skill" "$HOME_DIR/.agents/skills/another-skill"
 touch "$HOME_DIR/.local/bin/another-program"
 run_installer "$HOME_DIR" "$DIST" --uninstall >/dev/null
 expect_nothing_installed "$HOME_DIR" "uninstall"
 [[ ! -e "$HOME_DIR/.config/termquilt" ]] || fail "settings were left behind"
-pass "removes the program, the skill and the settings"
-[[ -d "$HOME_DIR/keep-me" && -d "$HOME_DIR/.claude/skills/another-skill" && -f "$HOME_DIR/.local/bin/another-program" ]] \
+pass "removes the program, both skills and the settings"
+[[ -d "$HOME_DIR/keep-me" && -d "$HOME_DIR/.claude/skills/another-skill" && -d "$HOME_DIR/.agents/skills/another-skill" \
+  && -f "$HOME_DIR/.local/bin/another-program" ]] \
   || fail "uninstall removed something else"
 pass "leaves everything else alone"
 run_installer "$HOME_DIR" "$DIST" --uninstall >/dev/null || fail "a second uninstall failed"

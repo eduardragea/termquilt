@@ -453,6 +453,35 @@ func fixedFontWindow(_ id: Int, _ x: Int, _ y: Int, title: String = "shell") -> 
     }
 }
 
+@Suite struct SandboxTests {
+    @Test func spotsCodexsSandbox() {
+        #expect(sandboxProblem(environment: ["CODEX_SANDBOX": "seatbelt"]) == .insideCodexSandbox)
+    }
+
+    @Test func staysOutOfTheWayEverywhereElse() {
+        #expect(sandboxProblem(environment: [:]) == nil)
+        #expect(sandboxProblem(environment: ["CODEX_MANAGED_BY_NPM": "1", "TERM": "xterm"]) == nil)
+    }
+
+    @Test func anEmptyValueIsNotASandbox() {
+        #expect(sandboxProblem(environment: ["CODEX_SANDBOX": ""]) == nil)
+    }
+
+    @Test func canBeOverriddenWhenTheVariableIsJustLeftOver() {
+        // A tmux server started from the sandbox passes the variable on to ordinary shells.
+        let environment = ["CODEX_SANDBOX": "seatbelt", "TERMQUILT_IGNORE_SANDBOX": "1"]
+        #expect(sandboxProblem(environment: environment) == nil)
+    }
+
+    @Test func explainsTheFix() {
+        let message = TermquiltError.insideCodexSandbox.description
+        #expect(message.contains("sandbox"))
+        #expect(message.contains(#"prefix_rule(pattern=["termquilt"], decision="allow")"#))
+        #expect(message.contains("~/.codex/rules/default.rules"))
+        #expect(message.contains("TERMQUILT_IGNORE_SANDBOX=1"))
+    }
+}
+
 @Suite struct GhosttyScriptTests {
     @Test func setsTheFontOnEveryTerminal() {
         let script = GhosttyScript.setFont(14)

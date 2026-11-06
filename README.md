@@ -4,13 +4,14 @@
 
 # termquilt
 
-### Ask Claude to tidy your terminals.
+### Ask Claude or Codex to tidy your terminals.
 
 Too many coding agents open? termquilt puts every terminal window into a clean grid, using all the free space and leaving your other apps alone. Where the app allows it, the text ends up one readable size everywhere.
 
 [![macOS 13 or newer](https://img.shields.io/badge/macOS-13%2B-111?logo=apple&logoColor=white)](#requirements)
 [![Terminal, iTerm2 and more](https://img.shields.io/badge/works%20with-Terminal%2C%20iTerm2%20%2B%20more-111)](#which-terminals-work)
 [![Claude Code skill](https://img.shields.io/badge/Claude%20Code-skill-d97757)](#then-just-ask)
+[![Codex skill](https://img.shields.io/badge/Codex-skill-10a37f)](#in-codex)
 [![MIT license](https://img.shields.io/badge/license-MIT-111)](LICENSE)
 [![CI](https://github.com/eduardragea/termquilt/actions/workflows/ci.yml/badge.svg)](https://github.com/eduardragea/termquilt/actions/workflows/ci.yml)
 
@@ -33,20 +34,20 @@ Too many coding agents open? termquilt puts every terminal window into a clean g
 
 ## Install
 
-Paste this into Claude Code:
+Paste this into Claude Code or Codex:
 
 ```text
 Install termquilt by running:
 curl -fsSL https://raw.githubusercontent.com/eduardragea/termquilt/main/install.sh | bash
 ```
 
-That's it. You don't need Xcode, and it only takes a few seconds. It adds a small program to `~/.local/bin` and a skill to `~/.claude/skills`. [The script](install.sh) is short if you'd like to read it first.
+That's it. You don't need Xcode, and it only takes a few seconds. It adds a small program to `~/.local/bin` and a skill to `~/.claude/skills` and `~/.agents/skills`, which is where Claude Code and Codex look. [The script](install.sh) is short if you'd like to read it first.
 
-Not using Claude Code? Run the `curl` part in any terminal, then use the [hotkeys](#hotkeys) or [commands](#commands).
+Not using either? Run the `curl` part in any terminal, then use the [hotkeys](#hotkeys) or [commands](#commands).
 
 ## Then just ask
 
-In any Claude Code session, in any of your terminals, say what you want:
+In any Claude Code or Codex session, in any of your terminals, say what you want:
 
 <p align="center">
 <img src="docs/demo.svg" alt="A pile of overlapping terminal windows snaps into a tidy grid around a browser when someone types &quot;tidy my terminals&quot;. Then the text grows when they type &quot;raise the font&quot;." width="100%">
@@ -79,7 +80,17 @@ Back where they were.
 | "only the claude ones" | Only windows with that in their title get arranged |
 | "put them back" | Undo. Say it again to redo |
 
-The first time, Claude Code asks before it runs the installer and may ask once before using the skill, and macOS asks once per app to let termquilt control your terminal. If you never want Claude Code to ask about termquilt again, tell it "stop asking me for permission".
+The first time, Claude Code asks before it runs the installer and may ask once before using the skill, and macOS asks once per app to let termquilt control your terminal. If you never want it to ask about termquilt again, tell it "stop asking me for permission".
+
+### In Codex
+
+Codex runs commands in a sandbox that blocks controlling other apps, so termquilt has to run outside it. Codex asks you to approve that each time, until you say "stop asking me for permission" or add this line to `~/.codex/rules/default.rules` yourself:
+
+```text
+prefix_rule(pattern=["termquilt"], decision="allow")
+```
+
+Restart Codex after adding it. The rule matches the plain `termquilt` command, so `~/.local/bin` needs to be on your PATH.
 
 ## What you get
 
@@ -126,7 +137,7 @@ Terminals inside VS Code and Cursor aren't separate windows, so they aren't arra
 
 - macOS 13 or newer, on Apple silicon or Intel
 - One of the [terminals above](#which-terminals-work)
-- Claude Code, if you want to ask in plain words. The hotkeys and commands work without it
+- Claude Code or Codex, if you want to ask in plain words. The hotkeys and commands work without them
 
 ## How it decides
 
@@ -190,7 +201,7 @@ Moving a window doesn't raise it. If another app ends up covering a terminal, Te
 
 ## Commands
 
-Everything Claude does, you can do yourself:
+Everything the skill does, you can do yourself:
 
 ```sh
 termquilt                  # arrange every terminal window
@@ -216,7 +227,7 @@ termquilt status           # your screens, saved settings, terminals, and which 
 curl -fsSL https://raw.githubusercontent.com/eduardragea/termquilt/main/install.sh | bash -s -- --uninstall
 ```
 
-This removes the program, the skill, the hotkeys and termquilt's own settings. If you told Claude Code to stop asking about termquilt, that rule stays in `~/.claude/settings.json` until you remove it.
+This removes the program, the skills, the hotkeys and termquilt's own settings. If you told Claude Code or Codex to stop asking about termquilt, that rule stays in `~/.claude/settings.json` or `~/.codex/rules/default.rules` until you remove it.
 
 ## Build from source
 
@@ -226,7 +237,7 @@ You need Swift 6, which comes with Xcode 16 or newer.
 git clone https://github.com/eduardragea/termquilt.git
 cd termquilt
 make install        # the program, in ~/.local/bin
-make install-skill  # the skill, linked into ~/.claude/skills
+make install-skill  # the skill, linked into ~/.claude/skills and ~/.agents/skills
 ```
 
 ## Contributing
