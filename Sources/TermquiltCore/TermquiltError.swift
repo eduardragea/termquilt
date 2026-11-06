@@ -1,7 +1,19 @@
 import Foundation
 
+/// Inside Codex's sandbox macOS hides other apps, so termquilt would wrongly report that no terminal
+/// is running. Codex sets this variable there, which allows saying what's really wrong.
+///
+/// Programs inherit the variable, so a long-lived one started from the sandbox, like a tmux server,
+/// can pass it on to shells that aren't sandboxed at all. Hence the override.
+public func sandboxProblem(environment: [String: String]) -> TermquiltError? {
+    guard environment["TERMQUILT_IGNORE_SANDBOX"] == nil,
+          let sandbox = environment["CODEX_SANDBOX"], !sandbox.isEmpty else { return nil }
+    return .insideCodexSandbox
+}
+
 public enum TermquiltError: Error, Equatable, CustomStringConvertible, LocalizedError {
     case terminalNotRunning
+    case insideCodexSandbox
     case automationDenied(app: String)
     case accessibilityDenied(app: String)
     case fontChangeFailed(app: String, detail: String)
@@ -21,6 +33,13 @@ public enum TermquiltError: Error, Equatable, CustomStringConvertible, Localized
         case .terminalNotRunning:
             return "No supported terminal is running, so there is nothing to arrange. "
                 + "termquilt works with Terminal, iTerm2, Ghostty, kitty, WezTerm, Alacritty and Warp."
+        case .insideCodexSandbox:
+            return """
+            termquilt can't work inside Codex's sandbox, because the sandbox blocks controlling other apps.
+            Run it outside the sandbox by approving it when Codex asks. To stop being asked, add this line to ~/.codex/rules/default.rules:
+              prefix_rule(pattern=["termquilt"], decision="allow")
+            If you aren't in Codex's sandbox and still see this, set TERMQUILT_IGNORE_SANDBOX=1.
+            """
         case .automationDenied(let app):
             return """
             macOS blocked termquilt from controlling \(app).
