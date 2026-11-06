@@ -14,7 +14,7 @@ cd termquilt
 make test           # unit tests
 make test-install   # builds a release and tests install.sh in throwaway home folders
 make install        # installs your build to ~/.local/bin
-make install-skill  # links the skill in this repo into ~/.claude/skills, so edits apply at once
+make install-skill  # links the skill in this repo into Claude Code and Codex, so edits apply at once
 ```
 
 ## Where things are
@@ -24,7 +24,7 @@ make install-skill  # links the skill in this repo into ~/.claude/skills, so edi
 | `Sources/TermquiltCore` | All the decisions: free space, layout, font, settings, undo. No macOS calls, and fully unit tested |
 | `Sources/TermquiltMac` | The parts that talk to macOS: each terminal app, the window list, hotkeys, launchd |
 | `Sources/termquilt` | The command line |
-| `.claude/skills/termquilt` | The Claude Code skill |
+| `.claude/skills/termquilt` | The skill, shared by Claude Code and Codex |
 | `install.sh` | What people run to install it |
 
 ## Before you open a pull request

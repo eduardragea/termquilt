@@ -1,4 +1,5 @@
 import ArgumentParser
+import Foundation
 import TermquiltCore
 import TermquiltMac
 
@@ -7,7 +8,7 @@ struct TermquiltCLI: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "termquilt",
         abstract: "Arrange every terminal window into a tidy grid with one readable font.",
-        version: "0.1.0",
+        version: "0.2.0",
         subcommands: [Tile.self, Bigger.self, Smaller.self, Undo.self, Status.self, Hotkeys.self],
         defaultSubcommand: Tile.self
     )
@@ -55,6 +56,13 @@ struct TargetFlags: ParsableArguments {
     }
 }
 
+func liveApp() throws -> TermquiltApp {
+    if let problem = sandboxProblem(environment: ProcessInfo.processInfo.environment) {
+        throw problem
+    }
+    return TermquiltApp.live()
+}
+
 func printLines(_ lines: [String]) {
     lines.forEach { print($0) }
 }
@@ -71,7 +79,7 @@ struct Tile: ParsableCommand {
 
     func run() throws {
         let fontOption = try font.map { (text: String) throws -> FontOption in try FontOption(parsing: text) } ?? .saved
-        printLines(try TermquiltApp.live().tile(target.options(font: fontOption)))
+        printLines(try liveApp().tile(target.options(font: fontOption)))
     }
 }
 
@@ -81,7 +89,7 @@ struct Bigger: ParsableCommand {
     @OptionGroup var target: TargetFlags
 
     func run() throws {
-        printLines(try TermquiltApp.live().adjustFont(by: 1, target.options()))
+        printLines(try liveApp().adjustFont(by: 1, target.options()))
     }
 }
 
@@ -91,7 +99,7 @@ struct Smaller: ParsableCommand {
     @OptionGroup var target: TargetFlags
 
     func run() throws {
-        printLines(try TermquiltApp.live().adjustFont(by: -1, target.options()))
+        printLines(try liveApp().adjustFont(by: -1, target.options()))
     }
 }
 
@@ -99,7 +107,7 @@ struct Undo: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Go back to the layout before the last change. Run again to redo.")
 
     func run() throws {
-        printLines(try TermquiltApp.live().undo())
+        printLines(try liveApp().undo())
     }
 }
 
@@ -119,7 +127,7 @@ struct Status: ParsableCommand {
             display: display.map(DisplaySelector.init(parsing:)) ?? .automatic,
             match: match
         )
-        printLines(try TermquiltApp.live().status(options))
+        printLines(try liveApp().status(options))
     }
 }
 
@@ -152,7 +160,7 @@ struct Hotkeys: ParsableCommand {
 
         func run() throws {
             try MainActor.assumeIsolated {
-                try HotkeyAgent.run(app: TermquiltApp.live())
+                try HotkeyAgent.run(app: liveApp())
             }
         }
     }
