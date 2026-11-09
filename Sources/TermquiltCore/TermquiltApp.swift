@@ -187,12 +187,17 @@ public struct TermquiltApp {
         let shareLines = screens.count > 1
             ? ["A tile would put " + listText(screens.map { "\($0.windows.count) on \($0.display.name)" }) + "."]
             : []
-        let otherApps = screens.flatMap { screen in
-            screen.plan.keptClear.map { "Keeping clear of \(placeText($0))" }
-                + screen.plan.covered.map { "No room to keep clear of \(placeText($0))" }
+        let otherApps: [String] = screens.flatMap { (screen: ScreenPlan) -> [String] in
+            let kept: [String] = screen.plan.keptClear.map { "Keeping clear of \(placeText($0))" }
+            let covered: [String] = screen.plan.covered.map { "No room to keep clear of \(placeText($0))" }
+            return kept + covered
         }
-        return displayLines + screenLines + shareLines + otherApps + terminal.notes()
-            + ["\(windows.count) terminal windows:"] + windows.map(statusLine)
+        // Spelled out as separate parts: a single long chain of `+` is too slow for some compilers.
+        let sections: [[String]] = [
+            displayLines, screenLines, shareLines, otherApps, terminal.notes(),
+            ["\(windows.count) terminal windows:"], windows.map(statusLine),
+        ]
+        return sections.flatMap { $0 }
     }
 
     // MARK: - Planning
