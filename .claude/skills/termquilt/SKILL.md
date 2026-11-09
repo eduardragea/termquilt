@@ -1,6 +1,6 @@
 ---
 name: termquilt
-description: Arranges the user's terminal windows and changes their text size when they ask in plain words, on macOS, in Terminal, iTerm2, Ghostty, kitty, WezTerm, Alacritty and Warp. Use for requests like "tidy my terminals", "raise the font", "make the text bigger", "smaller", "fill the screen", "don't cover my apps", "go around Safari", "move them to my other monitor", "put them back", or any complaint that terminals are messy, overlapping or hard to read. Also use for follow-ups to these, like "a bit more" or "undo that".
+description: Arranges the user's terminal windows and changes their text size when they ask in plain words, on macOS, in Terminal, iTerm2, Ghostty, kitty, WezTerm, Alacritty and Warp. Use for requests like "tidy my terminals", "raise the font", "make the text bigger", "smaller", "fill the screen", "don't cover my apps", "go around Safari", "move them to my other monitor", "use both screens", "put them back", or any complaint that terminals are messy, overlapping or hard to read. Also use for follow-ups to these, like "a bit more" or "undo that".
 allowed-tools: Bash(termquilt) Bash(termquilt *) Bash(~/.local/bin/termquilt) Bash(~/.local/bin/termquilt *)
 ---
 
@@ -29,6 +29,7 @@ Keeping this free of permission prompts is the whole point:
 | "don't cover my apps", "go around Safari" | `termquilt --around` |
 | "fill the screen", "ignore my other apps" | `termquilt --full` |
 | "put them on my laptop", "on the big monitor" | `termquilt --display laptop`, `--display external`, or part of a name from `termquilt status` |
+| "use both screens", "spread them out", "use all my monitors" | `termquilt --display all` |
 | "only the claude ones" | `termquilt --match claude`. The others stay where they are and may end up covered |
 | "put them back", "undo that" | `termquilt undo` |
 | "what would that do?" | The same command with `--dry-run`. `undo` and `hotkeys` have no preview, so say what they'd do instead |
@@ -38,13 +39,19 @@ Keeping this free of permission prompts is the whole point:
 
 For "a bit more" or "too far", repeat or reverse the last change.
 
-`--around`, `--full` and `--font` are remembered for that display. `--display` and `--match` apply to one run only.
+`--around`, `--full` and `--font` are remembered for each screen. `--display` with one screen is remembered for the set of screens plugged in now, until they ask for all of them again. `--match` applies to one run only.
 
 ## How to reply
 
 One or two lines. Say the text size and how many terminals, and name any app that got covered, because the user will want to know. Leave out commands and flags unless they ask. For example:
 
 > Done, 14 pt on all 12 terminals, and Safari is still clear. Some of them are just under 80 columns now.
+
+With two screens there's a line for each, and each screen has its own text size:
+
+> Done: 5 on the LG at 12 pt and 4 on the laptop at 16 pt. ChatGPT got covered on the laptop.
+
+If the output says it's "Only using" one screen, mention that "use both screens" spreads them out again.
 
 The terminal you're running in is usually one of those being arranged, so it may change size mid-reply. That's expected, and there's no need to mention it.
 
@@ -62,6 +69,8 @@ The terminal you're running in is usually one of those being arranged, so it may
 Support for Ghostty, kitty, WezTerm, Alacritty and Warp hasn't been tested against the real apps yet. If something goes wrong in one of them, say so, and suggest reporting it at https://github.com/eduardragea/termquilt/issues.
 
 ## How it decides
+
+With more than one screen, terminals are shared out by screen size, and the windows nearest each screen go there. Other apps don't change how many a screen gets. Each screen then follows the rules below on its own.
 
 With `--around`, every other app counts. Priority goes frontmost first within each group:
 

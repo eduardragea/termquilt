@@ -16,12 +16,22 @@ public struct AppleTerminal: TerminalBackend {
         _ = try script.run(TerminalScript.activate)
     }
 
+    /// Terminal lists each tab as a window, so only those on screen count.
     public func listWindows() throws(TermquiltError) -> [TerminalWindow] {
-        try parseWindowList(script.run(TerminalScript.list))
+        windowsOnScreen(try everyWindow(), onScreen: onScreenWindowNumbers(of: app))
     }
 
     public func apply(_ placements: [WindowPlacement]) throws(TermquiltError) -> [Int] {
-        parseFailedIDs(try script.run(TerminalScript.apply(placements)))
+        let withTabs = includingBackgroundTabs(placements, windows: try everyWindow(), onScreen: onScreenWindowNumbers(of: app))
+        let failed = parseFailedIDs(try script.run(TerminalScript.apply(withTabs, primaryHeight: primaryScreenHeight())))
+        let asked = Set(placements.map(\.windowID))
+        return failed.filter(asked.contains)
+    }
+
+    /// Includes background tabs and windows in other Spaces. Terminal's window IDs are the same
+    /// numbers the system window list uses.
+    private func everyWindow() throws(TermquiltError) -> [TerminalWindow] {
+        try parseWindowList(script.run(TerminalScript.list))
     }
 }
 

@@ -16,8 +16,10 @@ public struct Display: Equatable, Sendable {
 }
 
 public enum DisplaySelector: Equatable, Sendable {
-    /// The largest external monitor, or the laptop screen when there is none.
+    /// The screen last chosen for this set of screens, otherwise all of them.
     case automatic
+    /// Every screen, with the terminals shared out between them.
+    case all
     case builtIn
     case external
     /// One-based, as `termquilt status` numbers them.
@@ -29,6 +31,8 @@ public enum DisplaySelector: Equatable, Sendable {
         switch text.lowercased() {
         case "auto", "automatic":
             self = .automatic
+        case "all", "both", "every", "everywhere":
+            self = .all
         case "laptop", "internal", "builtin", "built-in":
             self = .builtIn
         case "external":
@@ -43,6 +47,31 @@ public enum DisplaySelector: Equatable, Sendable {
     }
 }
 
+/// Names a set of connected screens, so a choice made at one desk doesn't follow you to another.
+public func setupKey(_ displays: [Display]) -> String {
+    displays.map(\.name).sorted().joined(separator: " + ")
+}
+
+/// The screens a tile uses. Without a choice it's every screen, unless one was chosen for this
+/// set of screens before.
+public func targetDisplays(
+    _ displays: [Display],
+    _ selector: DisplaySelector,
+    preferences: Preferences
+) throws(TermquiltError) -> [Display] {
+    guard !displays.isEmpty else { throw .noDisplays }
+    switch selector {
+    case .all:
+        return displays
+    case .automatic:
+        let chosen = preferences.display(forSetup: setupKey(displays))
+        return displays.first { $0.name == chosen }.map { [$0] } ?? displays
+    case .builtIn, .external, .index, .name:
+        return [try selectDisplay(displays, selector)]
+    }
+}
+
+/// One screen. `.automatic` and `.all` pick the largest external monitor, or the laptop screen.
 public func selectDisplay(_ displays: [Display], _ selector: DisplaySelector) throws(TermquiltError) -> Display {
     guard !displays.isEmpty else { throw .noDisplays }
     let names = displays.map(\.name)
@@ -53,7 +82,7 @@ public func selectDisplay(_ displays: [Display], _ selector: DisplaySelector) th
     let selected: Display?
     let requested: String
     switch selector {
-    case .automatic:
+    case .automatic, .all:
         selected = largestExternal ?? displays.first { $0.isBuiltIn } ?? displays.first
         requested = "automatic"
     case .builtIn:

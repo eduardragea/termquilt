@@ -41,20 +41,30 @@ import Testing
 }
 
 @Suite struct ApplyScriptTests {
-    @Test func setsFontBeforeBoundsBecauseFontChangesResizeTheWindow() throws {
+    @Test func setsFontBeforeTheFrameBecauseFontChangesResizeTheWindow() throws {
         let script = TerminalScript.apply([
             WindowPlacement(windowID: 7, frame: Rect(x: 10, y: 20, width: 100, height: 200), fontSize: 14, fontAction: .set),
-        ])
+        ], primaryHeight: 1117)
         let font = try #require(script.range(of: "set font size of t to 14"))
-        let bounds = try #require(script.range(of: "set bounds of w to {10, 20, 110, 220}"))
-        #expect(font.lowerBound < bounds.lowerBound)
+        let frame = try #require(script.range(of: "set frame of w to"))
+        #expect(font.lowerBound < frame.lowerBound)
         #expect(script.contains("window id 7"))
+    }
+
+    /// Terminal sets `bounds` from the top of the screen a window is on, so they're never set.
+    @Test func setsTheFrameFromTheBottomOfTheMainScreen() {
+        // The monitor right of a 1117-point laptop screen, bottom edges level: its top is at 37.
+        let script = TerminalScript.apply([
+            WindowPlacement(windowID: 7, frame: Rect(x: 3008, y: 757, width: 640, height: 360), fontSize: 11, fontAction: .none),
+        ], primaryHeight: 1117)
+        #expect(script.contains("set frame of w to {3008, 0, 3648, 360}"))
+        #expect(!script.contains("set bounds"))
     }
 
     @Test func refreshNudgesTheFontOffAndBackOn() throws {
         let script = TerminalScript.apply([
             WindowPlacement(windowID: 7, frame: Rect(x: 0, y: 0, width: 100, height: 100), fontSize: 14, fontAction: .refresh),
-        ])
+        ], primaryHeight: 1000)
         let nudge = try #require(script.range(of: "set font size of t to 15"))
         let target = try #require(script.range(of: "set font size of t to 14"))
         #expect(nudge.lowerBound < target.lowerBound)
@@ -66,7 +76,7 @@ import Testing
                 windowID: 7, frame: Rect(x: 0, y: 0, width: 100, height: 100),
                 fontSize: FontLimits.maximum, fontAction: .refresh
             ),
-        ])
+        ], primaryHeight: 1000)
         #expect(script.contains("set font size of t to \(FontLimits.maximum - 1)"))
         #expect(!script.contains("set font size of t to \(FontLimits.maximum + 1)"))
     }
@@ -74,14 +84,14 @@ import Testing
     @Test func noFontLinesWhenTheFontIsAlreadyRight() {
         let script = TerminalScript.apply([
             WindowPlacement(windowID: 7, frame: Rect(x: 0, y: 0, width: 100, height: 100), fontSize: 14, fontAction: .none),
-        ])
+        ], primaryHeight: 1000)
         #expect(!script.contains("font size"))
     }
 
     @Test func aWindowThatDisappearedIsReportedNotFatal() {
         let script = TerminalScript.apply([
             WindowPlacement(windowID: 7, frame: Rect(x: 0, y: 0, width: 100, height: 100), fontSize: 14, fontAction: .none),
-        ])
+        ], primaryHeight: 1000)
         #expect(script.contains("on error"))
         #expect(script.contains("set end of failed to 7"))
     }

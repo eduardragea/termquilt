@@ -12,6 +12,9 @@ public struct TerminalWindow: Equatable, Sendable {
     public let appName: String
     /// Whether another program can change this window's text size.
     public let canSetFont: Bool
+    /// Whether a tab behind this one has a different text size, so a tidy has work to do even when
+    /// the window is already in its slot.
+    public let hasTabsAtOtherSizes: Bool
 
     public init(
         id: Int,
@@ -20,7 +23,8 @@ public struct TerminalWindow: Equatable, Sendable {
         grid: CharGrid,
         fontSize: Int,
         appName: String = "Terminal",
-        canSetFont: Bool = true
+        canSetFont: Bool = true,
+        hasTabsAtOtherSizes: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -29,10 +33,21 @@ public struct TerminalWindow: Equatable, Sendable {
         self.fontSize = fontSize
         self.appName = appName
         self.canSetFont = canSetFont
+        self.hasTabsAtOtherSizes = hasTabsAtOtherSizes
     }
 
     public func withID(_ id: Int) -> TerminalWindow {
-        TerminalWindow(id: id, title: title, frame: frame, grid: grid, fontSize: fontSize, appName: appName, canSetFont: canSetFont)
+        TerminalWindow(
+            id: id, title: title, frame: frame, grid: grid, fontSize: fontSize, appName: appName,
+            canSetFont: canSetFont, hasTabsAtOtherSizes: hasTabsAtOtherSizes
+        )
+    }
+
+    func withTabsAtOtherSizes(_ value: Bool) -> TerminalWindow {
+        TerminalWindow(
+            id: id, title: title, frame: frame, grid: grid, fontSize: fontSize, appName: appName,
+            canSetFont: canSetFont, hasTabsAtOtherSizes: value
+        )
     }
 }
 
@@ -61,7 +76,7 @@ public struct WindowPlacement: Equatable, Hashable, Sendable {
     }
 
     public func changes(_ window: TerminalWindow) -> Bool {
-        fontAction != .none || frame != window.frame
+        fontAction != .none || frame != window.frame || window.hasTabsAtOtherSizes
     }
 
     public func withID(_ id: Int) -> WindowPlacement {

@@ -34,11 +34,13 @@ public enum TerminalScript {
 
     /// Applies placements and returns the IDs of any windows that could not be
     /// changed, usually because they closed in the meantime.
-    public static func apply(_ placements: [WindowPlacement]) -> String {
+    ///
+    /// `primaryHeight` is the height of the screen with the menu bar in Displays settings.
+    public static func apply(_ placements: [WindowPlacement], primaryHeight: Int) -> String {
         """
         tell application "Terminal"
         	set failed to {}
-        \(placements.map(applyBlock).joined(separator: "\n"))
+        \(placements.map { applyBlock($0, primaryHeight: primaryHeight) }.joined(separator: "\n"))
         	set AppleScript's text item delimiters to ","
         	return failed as text
         end tell
@@ -46,13 +48,18 @@ public enum TerminalScript {
     }
 
     /// The font goes first: changing it resizes the window to keep its character
-    /// grid, so setting the bounds any earlier would be undone.
-    private static func applyBlock(_ placement: WindowPlacement) -> String {
+    /// grid, so setting the frame any earlier would be undone.
+    ///
+    /// Sets `frame`, which counts up from the bottom of the main screen, rather than `bounds`.
+    /// Terminal reads `bounds` correctly but sets it from the top of whichever screen the window
+    /// is on, so a window already on a second screen with a different top edge lands too high or
+    /// too low. Measured 2026-11-09 with a laptop and a monitor whose top sat 37 points lower.
+    private static func applyBlock(_ placement: WindowPlacement, primaryHeight: Int) -> String {
         let frame = placement.frame
         return """
         	try
         		set w to window id \(placement.windowID)
-        \(fontLines(placement))		set bounds of w to {\(frame.x), \(frame.y), \(frame.maxX), \(frame.maxY)}
+        \(fontLines(placement))		set frame of w to {\(frame.x), \(primaryHeight - frame.maxY), \(frame.maxX), \(primaryHeight - frame.y)}
         	on error
         		set end of failed to \(placement.windowID)
         	end try
