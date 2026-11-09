@@ -223,6 +223,43 @@ else
   echo "  skipped: no other apps are open on this display, so there was nothing to keep clear of"
 fi
 
+echo "Every screen"
+# x,y,width,height of each screen's usable area, one per line.
+AREAS="$("$BINARY" status | sed -nE 's/^Display [0-9]+: .*usable area ([0-9]+)×([0-9]+) at (-?[0-9]+),(-?[0-9]+).*/\3,\4,\1,\2/p')"
+if [[ "$(echo "$AREAS" | grep -c .)" -gt 1 ]]; then
+  ALL=(--display all --match "$TAG")
+  OUT="$("$BINARY" "${ALL[@]}" --full --font 12)"
+  echo "    ${OUT//$'\n'/$'\n    '}"
+  test_windows | python3 -I -c '
+import sys
+areas = [tuple(map(int, line.split(","))) for line in sys.argv[1].split()]
+rows = [line.strip().split("|") for line in sys.stdin if line.strip()]
+frames = [tuple(map(int, row[1:5])) for row in rows]
+for index, a in enumerate(frames):
+    for b in frames[index + 1:]:
+        assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], f"overlap {a} {b}"
+used = {}
+for f in frames:
+    homes = [area for area in areas if area[0] <= f[0] and area[1] <= f[1] and f[2] <= area[0] + area[2] and f[3] <= area[1] + area[3]]
+    assert homes, f"{f} is not inside any screen'"'"'s usable area {areas}"
+    used.setdefault(homes[0], []).append(f)
+assert len(used) > 1, f"only one screen was used: {list(used)}"
+for area, fs in used.items():
+    covered = sum((f[2] - f[0]) * (f[3] - f[1]) for f in fs)
+    assert covered == area[2] * area[3], f"screen {area} covered {covered} of {area[2] * area[3]}"
+' "$AREAS" || fail "sharing terminals between screens"
+  pass "terminals are shared out and fill every screen exactly"
+
+  # Changing the font resizes windows where they stand, including on the second screen, which is
+  # where Terminal used to put windows too high or too low.
+  "$BINARY" "${ALL[@]}" --font 13 >/dev/null
+  OUT="$("$BINARY" "${ALL[@]}")"
+  [[ "$OUT" == *"Already tidy"* ]] || fail "a window didn't land where it was sent: $OUT"
+  pass "windows already on a second screen land exactly where they're sent"
+else
+  echo "  skipped: connect a second screen to check sharing terminals between screens"
+fi
+
 echo "Your other windows"
 AFTER_OTHERS="$(other_windows)"
 if [[ "$AFTER_OTHERS" != "$BEFORE_OTHERS" ]]; then

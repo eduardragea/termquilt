@@ -13,17 +13,25 @@ public enum LayoutMode: String, Codable, Sendable {
 public struct Preferences: Equatable, Codable, Sendable {
     public let fontByDisplay: [String: Int]
     public let layoutByDisplay: [String: LayoutMode]
+    /// The one screen chosen for a set of screens, keyed by `setupKey`. Absent means all of them.
+    public let displayBySetup: [String: String]
 
-    public init(fontByDisplay: [String: Int] = [:], layoutByDisplay: [String: LayoutMode] = [:]) {
+    public init(
+        fontByDisplay: [String: Int] = [:],
+        layoutByDisplay: [String: LayoutMode] = [:],
+        displayBySetup: [String: String] = [:]
+    ) {
         self.fontByDisplay = fontByDisplay
         self.layoutByDisplay = layoutByDisplay
+        self.displayBySetup = displayBySetup
     }
 
-    /// Files saved before layouts existed have no such key.
+    /// Files saved by older versions lack the newer keys.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         fontByDisplay = try container.decode([String: Int].self, forKey: .fontByDisplay)
         layoutByDisplay = try container.decodeIfPresent([String: LayoutMode].self, forKey: .layoutByDisplay) ?? [:]
+        displayBySetup = try container.decodeIfPresent([String: String].self, forKey: .displayBySetup) ?? [:]
     }
 
     public func font(for display: String) -> Int? {
@@ -34,17 +42,28 @@ public struct Preferences: Equatable, Codable, Sendable {
         layoutByDisplay[display] ?? .around
     }
 
+    public func display(forSetup setup: String) -> String? {
+        displayBySetup[setup]
+    }
+
     /// Returns a copy with the display's font set, or removed when `font` is nil.
     public func settingFont(_ font: Int?, for display: String) -> Preferences {
         var updated = fontByDisplay
         updated[display] = font
-        return Preferences(fontByDisplay: updated, layoutByDisplay: layoutByDisplay)
+        return Preferences(fontByDisplay: updated, layoutByDisplay: layoutByDisplay, displayBySetup: displayBySetup)
     }
 
     public func settingLayout(_ layout: LayoutMode, for display: String) -> Preferences {
         var updated = layoutByDisplay
         updated[display] = layout
-        return Preferences(fontByDisplay: fontByDisplay, layoutByDisplay: updated)
+        return Preferences(fontByDisplay: fontByDisplay, layoutByDisplay: updated, displayBySetup: displayBySetup)
+    }
+
+    /// Returns a copy with the screen chosen for this set of screens, or every screen when `display` is nil.
+    public func settingDisplay(_ display: String?, forSetup setup: String) -> Preferences {
+        var updated = displayBySetup
+        updated[setup] = display
+        return Preferences(fontByDisplay: fontByDisplay, layoutByDisplay: layoutByDisplay, displayBySetup: updated)
     }
 }
 

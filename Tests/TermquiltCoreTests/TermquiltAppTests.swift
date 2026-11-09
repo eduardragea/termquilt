@@ -235,7 +235,7 @@ final class TitleChangingTerminal: FakeTerminal, @unchecked Sendable {
     @Test func aChosenLayoutIsRememberedPerDisplay() throws {
         let terminal = FakeTerminal(messy(4))
         let app = makeApp(terminal, screen: [centredBrowser], displays: [odyssey, laptop])
-        _ = try app.tile(TileOptions(layout: .full))
+        _ = try app.tile(TileOptions(layout: .full, display: .external))
         #expect(try app.store.loadPreferences().layout(for: "Odyssey") == .full)
         #expect(try app.store.loadPreferences().layout(for: "Laptop") == .around)
 

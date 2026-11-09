@@ -7,6 +7,7 @@ public struct MacDisplays: DisplayProvider {
     public init() {}
 
     public func displays() -> [Display] {
+        connectToWindowServer()
         let screens = NSScreen.screens
         // The first screen is always the primary one, whose top-left is the global origin.
         guard let primary = screens.first else { return [] }
@@ -23,6 +24,14 @@ public struct MacDisplays: DisplayProvider {
         }
     }
 
+    /// Until a process has an application object, macOS reports a second screen's usable area as if
+    /// it had no menu bar, and windows planned for its top edge get pushed down over the next row.
+    /// Creating one adds no Dock icon to a command-line tool.
+    private func connectToWindowServer() {
+        guard Thread.isMainThread else { return }
+        MainActor.assumeIsolated { _ = NSApplication.shared }
+    }
+
     private func topLeftRect(_ frame: NSRect, primaryHeight: Double) -> Rect {
         Rect(
             appKitX: Double(frame.origin.x),
@@ -37,6 +46,24 @@ public struct MacDisplays: DisplayProvider {
         guard let number = screen.deviceDescription[Self.screenNumberKey] as? NSNumber else { return false }
         return CGDisplayIsBuiltin(number.uint32Value) != 0
     }
+}
+
+/// The height of the screen with the menu bar in Displays settings, whose corners anchor both
+/// of macOS's coordinate systems.
+func primaryScreenHeight() -> Int {
+    Int((NSScreen.screens.first?.frame.height ?? 0).rounded())
+}
+
+/// The system's numbers for an app's windows that are on screen now. Background tabs, minimized
+/// windows and windows in other Spaces aren't. Nil when the system won't say.
+func onScreenWindowNumbers(of app: RunningApp) -> Set<Int>? {
+    let processes = Set(app.instances.map { Int($0.processIdentifier) })
+    let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+    guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]], !list.isEmpty else { return nil }
+    return Set(list.compactMap { info -> Int? in
+        guard let process = info[kCGWindowOwnerPID as String] as? Int, processes.contains(process) else { return nil }
+        return info[kCGWindowNumber as String] as? Int
+    })
 }
 
 public struct MacScreenWindows: ScreenWindowProvider {

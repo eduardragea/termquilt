@@ -76,7 +76,8 @@ Back where they were.
 | "raise the font", "smaller", "make it 16" | The text changes everywhere and the grid refits |
 | "fill the screen" | Terminals take the whole screen, over other apps, until you say otherwise |
 | "don't cover my apps" | Terminals go back to fitting around your apps |
-| "put them on my laptop" | Everything moves to that screen |
+| "put them on my laptop" | Everything moves to that screen, and stays there whenever these screens are connected |
+| "use both screens" | Terminals are shared across all your screens again |
 | "only the claude ones" | Only windows with that in their title get arranged |
 | "put them back" | Undo. Say it again to redo |
 
@@ -98,6 +99,7 @@ Restart Codex after adding it. The rule matches the plain `termquilt` command, s
 - **All your terminal apps together.** Windows from different apps go into the same grid.
 - **No overlaps and no wasted space.** Terminals fill all the room they're given, edge to edge.
 - **Your other apps stay visible.** A browser in the middle of an ultrawide keeps its spot, with terminals on both sides. If something has to be covered, it tells you what.
+- **Every screen gets used.** With a monitor plugged in, terminals are shared between it and the laptop, unless you ask for just one.
 - **It remembers each screen.** Your laptop, your ultrawide and the monitor at work each keep their own text size and layout.
 - **It stays out of the way.** Your agents keep running while their windows move. Your Terminal profiles don't change, and it never touches the network after installing.
 
@@ -172,7 +174,9 @@ A size you pick is remembered per screen. It changes the text, not which apps th
 
 <br>
 
-It uses your largest external monitor if there is one, otherwise the laptop screen.
+With more than one screen, terminals are shared out by screen size, so each one gets about the same room. A window stays on the screen it's on while that screen has space for it. When some have to move, the ones nearest the other screen go. Each screen then gets its own grid, text size and layout, and the terminals go around other apps there as usual. Apps don't change how many terminals a screen gets, so an app you can see on the laptop doesn't push everything onto the monitor. If there's no room around it, it gets covered and you're told.
+
+Ask for one screen ("put them on the big monitor") and they all go there. That's remembered for that set of screens, so your desk at home and your desk at work can differ. "use both screens" shares them out again.
 
 Each window goes to its nearest slot, so things stay roughly where you left them. Asking again on a tidy screen changes nothing.
 
@@ -189,8 +193,8 @@ Moving a window doesn't raise it. If another app ends up covering a terminal, Te
 
 - In Terminal.app, fonts are set per window, so a new window starts with your profile's font until you tidy again.
 - In Ghostty and Alacritty, a text size change applies to every window of that app at once. It's skipped when only some of them are being arranged, and undo can't bring back the old size.
-- All tabs in a window get the new font.
-- Minimized windows are skipped, and windows on another Space stay on that Space.
+- All tabs in a window get the new font, and a window with several tabs gets one slot.
+- Minimized windows are skipped. So are Terminal.app windows on another Space.
 - Undo goes back one step, to before the last run that moved a window, including the font and layout from then. It stops working once a terminal app restarts or opens, because window IDs can be reused.
 - Which apps win depends on what's in front right now, so clicking a different app and tidying again can give a different layout.
 - Terminal.app doesn't report Cmd-plus zoom, so termquilt works out a zoomed window's real font from its cell size.
@@ -217,7 +221,8 @@ termquilt status           # your screens, saved settings, terminals, and which 
 | `--full` | Use the whole screen, even over other apps. Remembered for this screen |
 | `--font 14` | Use this size, and remember it for this screen |
 | `--font auto` | Go back to fitting automatically |
-| `--display laptop` | Choose a screen: `laptop`, `external`, a number from `termquilt status`, or part of its name |
+| `--display laptop` | Put everything on one screen: `laptop`, `external`, a number from `termquilt status`, or part of its name. Remembered for this set of screens |
+| `--display all` | Share terminals across every screen again (the default) |
 | `--match claude` | Only arrange windows whose title contains this text. Other terminals stay put and may end up covered |
 | `--dry-run` | Change nothing and remember nothing, just report |
 

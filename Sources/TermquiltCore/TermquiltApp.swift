@@ -110,41 +110,18 @@ public struct TermquiltApp {
     }
 
     public func tile(_ options: TileOptions) throws(TermquiltError) -> [String] {
-        guard terminal.isRunning() else { throw .terminalNotRunning }
-        let windows = try matchingWindows(options.match)
-        guard !windows.isEmpty else { return ["No terminal windows to arrange."] + terminal.notes() }
-
-        let display = try selectDisplay(displays.displays(), options.display)
-        let preferences = try store.loadPreferences()
-        let metrics = TerminalMetrics(scale: display.scale)
-        let plan = tilePlan(for: windows, display: display, preferences: preferences, options: options)
-        let placements = assignPlacements(
-            windows: windows, cells: plan.layout.cells, fontSize: plan.layout.fontSize, metrics: metrics,
-            applyingUnknownFonts: options.font != .saved
-        )
-
-        if options.dryRun {
-            let byID = Dictionary(windows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            let predicted = placements
-                .filter { byID[$0.windowID].map(hasKnowableGrid) ?? false }
-                .map { metrics.grid(for: $0.frame.size, font: plan.layout.fontSize) }
-            return describe(plan, display: display, grids: predicted, windows: windows, options: options)
-                + ["Dry run: nothing was changed."]
-        }
-
-        let lines = try apply(placements, to: windows, plan: plan, display: display, metrics: metrics, previous: preferences, options: options)
-        // Only after the change went through, so a failed run doesn't leave a size nothing is using.
-        try remember(options, preferences: preferences, display: display, windows: windows)
-        return lines
+        try tile(options, font: .option(options.font))
     }
 
     /// Flips between keeping clear of other apps and using the whole screen, then tiles.
     public func toggleLayout(_ options: TileOptions) throws(TermquiltError) -> [String] {
-        let display = try selectDisplay(displays.displays(), options.display)
-        let current = try store.loadPreferences().layout(for: display.name)
-        return try tile(options.withLayout(current == .full ? .around : .full))
+        let preferences = try store.loadPreferences()
+        let targets = try targetDisplays(displays.displays(), options.display, preferences: preferences)
+        let isFull = targets.allSatisfy { preferences.layout(for: $0.name) == .full }
+        return try tile(options.withLayout(isFull ? .around : .full))
     }
 
+    /// Each screen keeps its own size, so each goes one point up or down from where it is.
     public func adjustFont(by delta: Int, _ options: TileOptions) throws(TermquiltError) -> [String] {
         guard terminal.isRunning() else { throw .terminalNotRunning }
         let windows = try matchingWindows(options.match)
@@ -152,16 +129,7 @@ public struct TermquiltApp {
 
         // Moving windows wouldn't answer a request for bigger text, so say why nothing happened.
         guard windows.contains(where: \.canSetFont) else { return fixedFontNotes(for: windows) + terminal.notes() }
-
-        let display = try selectDisplay(displays.displays(), options.display)
-        let preferences = try store.loadPreferences()
-        let readable = windows.filter { $0.canSetFont && $0.fontSize != TerminalWindow.unknownFont }
-        let current = preferences.font(for: display.name)
-            ?? (readable.isEmpty
-                ? tilePlan(for: windows, display: display, preferences: preferences, options: options.withFont(.automatic)).layout.fontSize
-                : mostCommonFont(in: readable))
-        let next = min(FontLimits.maximum, max(FontLimits.minimum, current + delta))
-        return try tile(options.withFont(.fixed(next)))
+        return try tile(options, font: .step(delta))
     }
 
     /// Restores the previous layout. Undoing twice redoes, because the state being
@@ -177,7 +145,7 @@ public struct TermquiltApp {
         // would let a second undo rewrite windows the original tile never touched.
         let savedIDs = Set(snapshot.windows.map(\.id))
         let windows = try terminal.listWindows().filter { savedIDs.contains($0.id) }
-        let current = Dictionary(windows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let current = byID(windows)
         let placements = snapshot.windows.compactMap { saved -> WindowPlacement? in
             guard let window = current[saved.id] else { return nil }
             let placement = WindowPlacement(
@@ -190,11 +158,12 @@ public struct TermquiltApp {
         }
         guard !placements.isEmpty else { return ["Nothing to undo: those windows are already as they were, or have closed."] }
 
-        let scale = try selectDisplay(displays.displays(), .automatic).scale
+        let all = displays.displays()
+        guard !all.isEmpty else { throw .noDisplays }
         let currentPreferences = try store.loadPreferences()
         // The undo point is replaced only once the restore has worked, so a failure can be retried.
         let failed = try terminal.apply(placements)
-        try store.save(snapshotOf(windows, metrics: TerminalMetrics(scale: scale), preferences: currentPreferences))
+        try store.save(snapshotOf(windows, displays: all, preferences: currentPreferences))
         try store.save(snapshot.preferences)
         return ["Restored \(placements.count - failed.count) windows."] + failureNote(failed.count) + terminal.notes()
     }
@@ -202,48 +171,119 @@ public struct TermquiltApp {
     /// `display` and `match` work as they do for `tile`, so this reports what that tile would do.
     public func status(_ options: TileOptions = TileOptions()) throws(TermquiltError) -> [String] {
         let preferences = try store.loadPreferences()
-        let displayLines = displays.displays().enumerated().map { index, display in
+        let all = displays.displays()
+        let displayLines = all.enumerated().map { index, display in
             let usable = display.visibleFrame
             let kind = display.isBuiltIn ? "laptop" : "external"
-            return "Display \(index + 1): \(display.name) (\(kind)), usable area \(usable.width)×\(usable.height), "
+            return "Display \(index + 1): \(display.name) (\(kind)), usable area \(usable.width)×\(usable.height) at \(usable.x),\(usable.y), "
                 + settingsSummary(preferences, display: display)
         }
-        guard terminal.isRunning() else { return displayLines + ["No supported terminal is running."] }
+        let screenLines = all.count > 1 ? [screenChoiceSummary(all, preferences: preferences)] : []
+        guard terminal.isRunning() else { return displayLines + screenLines + ["No supported terminal is running."] }
 
         let windows = try matchingWindows(options.match)
-        let windowLines = windows.map(statusLine)
-        let otherApps = try otherAppLines(for: windows, preferences: preferences, options: options)
-        return displayLines + otherApps + terminal.notes() + ["\(windowLines.count) terminal windows:"] + windowLines
+        let targets = try targetDisplays(all, options.display, preferences: preferences)
+        let screens = plan(windows, on: targets, preferences: preferences, options: options, font: .option(.saved))
+        let shareLines = screens.count > 1
+            ? ["A tile would put " + listText(screens.map { "\($0.windows.count) on \($0.display.name)" }) + "."]
+            : []
+        let otherApps = screens.flatMap { screen in
+            screen.plan.keptClear.map { "Keeping clear of \(placeText($0))" }
+                + screen.plan.covered.map { "No room to keep clear of \(placeText($0))" }
+        }
+        return displayLines + screenLines + shareLines + otherApps + terminal.notes()
+            + ["\(windows.count) terminal windows:"] + windows.map(statusLine)
     }
 
-    private func statusLine(for window: TerminalWindow) -> String {
-        let frame = window.frame
-        let grid = window.grid.columns > 0 ? "\(window.grid.columns)×\(window.grid.rows) at " : ""
-        let font = window.fontSize == TerminalWindow.unknownFont ? window.appName : "\(window.fontSize) pt"
-        return "  \(grid)\(frame.width)×\(frame.height), \(font): \(printable(window.title))"
+    // MARK: - Planning
+
+    private func tile(_ options: TileOptions, font request: FontRequest) throws(TermquiltError) -> [String] {
+        guard terminal.isRunning() else { throw .terminalNotRunning }
+        let windows = try matchingWindows(options.match)
+        guard !windows.isEmpty else { return ["No terminal windows to arrange."] + terminal.notes() }
+
+        let all = displays.displays()
+        let preferences = try store.loadPreferences()
+        let targets = try targetDisplays(all, options.display, preferences: preferences)
+        let screens = plan(windows, on: targets, preferences: preferences, options: options, font: request)
+        let choice = options.display == .automatic && targets.count < all.count
+            ? ["Only using \(targets.map(\.name).joined()), as chosen for these screens. `termquilt --display all` uses every screen."]
+            : []
+
+        if options.dryRun {
+            let byID = byID(windows)
+            let predicted = screens.map { screen in
+                screen.placements
+                    .filter { byID[$0.windowID].map(hasKnowableGrid) ?? false }
+                    .map { screen.metrics.grid(for: $0.frame.size, font: screen.plan.layout.fontSize) }
+            }
+            return describe(screens, grids: predicted, windows: windows, options: options, extra: choice)
+                + ["Dry run: nothing was changed."]
+        }
+
+        let lines = try apply(screens, to: windows, displays: all, previous: preferences, options: options, extra: choice)
+        // Only after the change went through, so a failed run doesn't leave a size nothing is using.
+        try remember(screens, targets: targets, displays: all, preferences: preferences, options: options)
+        return lines
     }
 
-    private func settingsSummary(_ preferences: Preferences, display: Display) -> String {
-        let layout = preferences.layout(for: display.name) == .full ? "full screen" : "around other apps"
-        let font = preferences.font(for: display.name).map { "\($0) pt" } ?? "auto"
-        return "layout: \(layout), font: \(font)"
-    }
-
-    /// Explains why a tile might not use the whole screen.
-    private func otherAppLines(
-        for windows: [TerminalWindow],
+    /// Shares the windows out between the screens, then lays out each screen with its own settings.
+    func plan(
+        _ windows: [TerminalWindow],
+        on targets: [Display],
         preferences: Preferences,
-        options: TileOptions
-    ) throws(TermquiltError) -> [String] {
-        let target = try selectDisplay(displays.displays(), options.display)
-        let plan = tilePlan(for: windows, display: target, preferences: preferences, options: options)
-        return plan.keptClear.map { "Keeping clear of \(placeText($0))" }
-            + plan.covered.map { "No room to keep clear of \(placeText($0))" }
+        options: TileOptions,
+        font request: FontRequest
+    ) -> [ScreenPlan] {
+        let stack = screen.windowsFrontToBack()
+        let owners = terminal.ownerNames
+        let layoutMode = { (display: Display) in options.layout ?? preferences.layout(for: display.name) }
+        let groups = shareWindows(windows, among: targets)
+        // Every terminal is about to move, wherever it ends up, so none of them hides another app.
+        let tiledFrames = windows.map(\.frame)
+
+        return zip(targets, groups).filter { !$0.1.isEmpty }.map { display, group in
+            let metrics = TerminalMetrics(scale: display.scale)
+            let tilePlan = { (font: FontOption) in
+                makeSettledTilePlan(
+                    windowCount: group.count,
+                    tiledFrames: tiledFrames,
+                    windowsFrontToBack: stack,
+                    terminalOwners: owners,
+                    display: display,
+                    mode: layoutMode(display),
+                    font: planningFont(for: group, option: font, preferences: preferences, display: display),
+                    metrics: metrics
+                )
+            }
+            let font = fontOption(request, display: display, windows: group, preferences: preferences) {
+                tilePlan(.automatic).layout.fontSize
+            }
+            let plan = tilePlan(font)
+            let placements = assignPlacements(
+                windows: group, cells: plan.layout.cells, fontSize: plan.layout.fontSize, metrics: metrics,
+                applyingUnknownFonts: font != .saved
+            )
+            return ScreenPlan(display: display, windows: group, plan: plan, metrics: metrics, font: font, placements: placements)
+        }
     }
 
-    private func placeText(_ window: ScreenWindow) -> String {
-        let frame = window.frame
-        return "\(printable(window.owner)): \(frame.width)×\(frame.height) at \(frame.x),\(frame.y)"
+    private func fontOption(
+        _ request: FontRequest,
+        display: Display,
+        windows: [TerminalWindow],
+        preferences: Preferences,
+        automaticSize: () -> Int
+    ) -> FontOption {
+        switch request {
+        case .option(let option):
+            return option
+        case .step(let delta):
+            let readable = windows.filter { $0.canSetFont && $0.fontSize != TerminalWindow.unknownFont }
+            let current = preferences.font(for: display.name)
+                ?? (readable.isEmpty ? automaticSize() : mostCommonFont(in: readable))
+            return .fixed(min(FontLimits.maximum, max(FontLimits.minimum, current + delta)))
+        }
     }
 
     private func matchingWindows(_ match: String?) throws(TermquiltError) -> [TerminalWindow] {
@@ -252,34 +292,17 @@ public struct TermquiltApp {
         return windows.filter { $0.title.localizedCaseInsensitiveContains(match) }
     }
 
-    private func tilePlan(
-        for windows: [TerminalWindow],
-        display: Display,
-        preferences: Preferences,
-        options: TileOptions
-    ) -> TilePlan {
-        makeSettledTilePlan(
-            tiledFrames: windows.map(\.frame),
-            windowsFrontToBack: screen.windowsFrontToBack(),
-            terminalOwners: terminal.ownerNames,
-            display: display,
-            mode: options.layout ?? preferences.layout(for: display.name),
-            font: planningFont(for: windows, options: options, preferences: preferences, display: display),
-            metrics: TerminalMetrics(scale: display.scale)
-        )
-    }
-
     /// When no window's text size can change, plan for the size they already have.
     private func planningFont(
         for windows: [TerminalWindow],
-        options: TileOptions,
+        option: FontOption,
         preferences: Preferences,
         display: Display
     ) -> FontChoice {
         guard windows.isEmpty || windows.contains(where: \.canSetFont) else {
             return .fixed(estimatedFont(of: windows, metrics: TerminalMetrics(scale: display.scale)))
         }
-        return fontChoice(options.font, preferences: preferences, display: display)
+        return fontChoice(option, preferences: preferences, display: display)
     }
 
     private func estimatedFont(of windows: [TerminalWindow], metrics: TerminalMetrics) -> Int {
@@ -299,47 +322,69 @@ public struct TermquiltApp {
         }
     }
 
+    private func mostCommonFont(in windows: [TerminalWindow]) -> Int {
+        let counts = Dictionary(grouping: windows, by: \.fontSize).mapValues(\.count)
+        let best = counts.max { ($0.value, $0.key) < ($1.value, $1.key) }
+        return best?.key ?? FontLimits.autoMinimum
+    }
+
+    // MARK: - Applying
+
     private func remember(
-        _ options: TileOptions,
+        _ screens: [ScreenPlan],
+        targets: [Display],
+        displays all: [Display],
         preferences: Preferences,
-        display: Display,
-        windows: [TerminalWindow]
+        options: TileOptions
     ) throws(TermquiltError) {
-        // A size nothing could use shouldn't be applied later to a window that can.
-        let font = windows.contains(where: \.canSetFont) ? options.font : .saved
-        let withFont: Preferences
-        switch font {
-        case .saved: withFont = preferences
-        case .automatic: withFont = preferences.settingFont(nil, for: display.name)
-        case .fixed(let size): withFont = preferences.settingFont(size, for: display.name)
+        let perScreen = screens.reduce(preferences) { current, screen in
+            let name = screen.display.name
+            // A size nothing could use shouldn't be applied later to a window that can.
+            let font = screen.windows.contains(where: \.canSetFont) ? screen.font : .saved
+            let withFont: Preferences
+            switch font {
+            case .saved: withFont = current
+            case .automatic: withFont = current.settingFont(nil, for: name)
+            case .fixed(let size): withFont = current.settingFont(size, for: name)
+            }
+            return options.layout.map { withFont.settingLayout($0, for: name) } ?? withFont
         }
-        let updated = options.layout.map { withFont.settingLayout($0, for: display.name) } ?? withFont
+        let updated: Preferences
+        switch options.display {
+        case .automatic:
+            updated = perScreen
+        case .all:
+            updated = perScreen.settingDisplay(nil, forSetup: setupKey(all))
+        case .builtIn, .external, .index, .name:
+            updated = all.count > 1 ? perScreen.settingDisplay(targets.first?.name, forSetup: setupKey(all)) : perScreen
+        }
         guard updated != preferences else { return }
         try store.save(updated)
     }
 
     private func apply(
-        _ placements: [WindowPlacement],
+        _ screens: [ScreenPlan],
         to windows: [TerminalWindow],
-        plan: TilePlan,
-        display: Display,
-        metrics: TerminalMetrics,
+        displays all: [Display],
         previous: Preferences,
-        options: TileOptions
+        options: TileOptions,
+        extra: [String]
     ) throws(TermquiltError) -> [String] {
+        let placements = screens.flatMap(\.placements)
         let frames = Set(placements.map(\.frame))
-        let currentByID = Dictionary(windows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let currentByID = byID(windows)
         let changes = placements.filter { placement in
             currentByID[placement.windowID].map(placement.changes) ?? false
         }
         guard !changes.isEmpty else {
-            return describe(plan, display: display, grids: knownGrids(windows, plan: plan, metrics: metrics), windows: windows, options: options)
+            let grids = screens.map { knownGrids($0.windows, on: $0) }
+            return describe(screens, grids: grids, windows: windows, options: options, extra: extra)
                 + ["Already tidy."]
                 + (try raiseIfCovered(frames))
         }
 
         // Saved before applying, so a failure partway through can still be undone.
-        try store.save(snapshotOf(windows, metrics: metrics, preferences: previous))
+        try store.save(snapshotOf(windows, displays: all, preferences: previous))
         let failed = try terminal.apply(changes)
         settle()
 
@@ -347,7 +392,7 @@ public struct TermquiltApp {
         // because a window's default title includes its size and so changes when it is resized.
         let tiledIDs = Set(windows.map(\.id))
         let after = try terminal.listWindows().filter { tiledIDs.contains($0.id) }
-        let afterByID = Dictionary(after.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let afterByID = byID(after)
         let refused = placements.filter { placement in
             !failed.contains(placement.windowID)
                 && afterByID[placement.windowID].map { $0.frame != placement.frame } ?? false
@@ -355,7 +400,8 @@ public struct TermquiltApp {
         let refusedNote = refused.isEmpty
             ? []
             : ["\(refused.count) window\(refused.count == 1 ? "" : "s") didn't take the requested size."]
-        return describe(plan, display: display, grids: knownGrids(after, plan: plan, metrics: metrics), windows: after, options: options)
+        let grids = screens.map { screen in knownGrids(screen.windows.compactMap { afterByID[$0.id] }, on: screen) }
+        return describe(screens, grids: grids, windows: after, options: options, extra: extra)
             + failureNote(failed.count)
             + refusedNote
             + (try raiseIfCovered(frames))
@@ -375,10 +421,11 @@ public struct TermquiltApp {
     }
 
     /// Stores the font each window really renders with, so undo can bring back a Cmd-zoomed window.
-    private func snapshotOf(_ windows: [TerminalWindow], metrics: TerminalMetrics, preferences: Preferences) -> Snapshot {
+    private func snapshotOf(_ windows: [TerminalWindow], displays all: [Display], preferences: Preferences) -> Snapshot {
         Snapshot(
             windows: windows.map { window in
-                WindowState(
+                let metrics = TerminalMetrics(scale: display(showing: window.frame, among: all)?.scale ?? 1)
+                return WindowState(
                     id: window.id,
                     frame: window.frame,
                     fontSize: window.canSetFont ? effectiveFont(of: window, metrics: metrics) : TerminalWindow.unknownFont
@@ -389,61 +436,44 @@ public struct TermquiltApp {
         )
     }
 
-    private func failureNote(_ count: Int) -> [String] {
-        guard count > 0 else { return [] }
-        return ["\(count) window\(count == 1 ? "" : "s") couldn't be changed (closed in the meantime?)."]
-    }
-
-    private func mostCommonFont(in windows: [TerminalWindow]) -> Int {
-        let counts = Dictionary(grouping: windows, by: \.fontSize).mapValues(\.count)
-        let best = counts.max { ($0.value, $0.key) < ($1.value, $1.key) }
-        return best?.key ?? FontLimits.autoMinimum
-    }
-
     /// A grid can be worked out if the app reports it, or if termquilt set the font itself. Otherwise
     /// it would only be a guess about a font nothing here knows.
-    private func hasKnowableGrid(_ window: TerminalWindow) -> Bool {
+    func hasKnowableGrid(_ window: TerminalWindow) -> Bool {
         window.grid.columns > 0 || window.canSetFont
     }
 
-    private func knownGrids(_ windows: [TerminalWindow], plan: TilePlan, metrics: TerminalMetrics) -> [CharGrid] {
+    private func knownGrids(_ windows: [TerminalWindow], on screen: ScreenPlan) -> [CharGrid] {
         windows.filter(hasKnowableGrid).map { window in
-            window.grid.columns > 0 ? window.grid : metrics.grid(for: window.frame.size, font: plan.layout.fontSize)
+            window.grid.columns > 0 ? window.grid : screen.metrics.grid(for: window.frame.size, font: screen.plan.layout.fontSize)
         }
     }
+}
 
-    private func describe(
-        _ plan: TilePlan,
-        display: Display,
-        grids: [CharGrid],
-        windows: [TerminalWindow],
-        options: TileOptions
-    ) -> [String] {
-        let count = plan.layout.cells.count
-        let controlsFont = windows.contains(where: \.canSetFont)
-        let font = controlsFont ? ", \(plan.layout.fontSize) pt" : ""
-        let each = grids.isEmpty ? "" : ", each \(gridSummary(grids))"
-        let summary = "\(count) terminal\(count == 1 ? "" : "s") on \(display.name)\(font)\(each)"
-        // On its own, an app that can't change its text size needs no explaining unless asked for.
-        let fontNotes = controlsFont || options.font != .saved ? fixedFontNotes(for: windows) : []
-        return [summary] + plan.notes + fontNotes + terminal.notes()
-    }
+/// How the text size was asked for.
+enum FontRequest {
+    case option(FontOption)
+    /// One step up or down from each screen's current size.
+    case step(Int)
+}
 
-    private func fixedFontNotes(for windows: [TerminalWindow]) -> [String] {
-        let apps = windows.filter { !$0.canSetFont }.map(\.appName)
-        return apps.reduce(into: [String]()) { names, name in
-            if !names.contains(name) { names.append(name) }
-        }.map { "\($0) doesn't let other programs set its text size, so those windows kept theirs. Use ⌘+ and ⌘- there." }
-    }
+/// One screen's share of the terminals, and where they go on it.
+struct ScreenPlan {
+    let display: Display
+    let windows: [TerminalWindow]
+    let plan: TilePlan
+    let metrics: TerminalMetrics
+    /// What to remember for this screen once the tile has gone through.
+    let font: FontOption
+    let placements: [WindowPlacement]
+}
 
-    private func gridSummary(_ grids: [CharGrid]) -> String {
-        let columns = grids.map(\.columns)
-        let rows = grids.map(\.rows)
-        return "\(rangeText(columns))×\(rangeText(rows))"
-    }
+func byID(_ windows: [TerminalWindow]) -> [Int: TerminalWindow] {
+    Dictionary(windows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+}
 
-    private func rangeText(_ values: [Int]) -> String {
-        guard let low = values.min(), let high = values.max() else { return "0" }
-        return low == high ? "\(low)" : "\(low)-\(high)"
-    }
+/// The display showing most of a window, if any.
+func display(showing frame: Rect, among displays: [Display]) -> Display? {
+    displays
+        .compactMap { display in frame.clipped(to: display.frame).map { (display, $0.area) } }
+        .max { $0.1 < $1.1 }?.0
 }

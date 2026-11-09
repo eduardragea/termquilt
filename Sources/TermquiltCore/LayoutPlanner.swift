@@ -96,16 +96,19 @@ private func layout(
 }
 
 /// Splits `count` windows in proportion to `weights` without exceeding any capacity,
-/// using the largest-remainder method so the shares always add up to `count`.
-func apportion(_ count: Int, weights: [Double], capacities: [Int]) -> [Int] {
+/// using the largest-remainder method so the shares always add up to `count`. Equal remainders go
+/// to whichever has the most `incumbents`, then to the earlier one.
+func apportion(_ count: Int, weights: [Double], capacities: [Int], incumbents: [Int]? = nil) -> [Int] {
     let totalWeight = weights.reduce(0, +)
     guard totalWeight > 0 else { return weights.map { _ in 0 } }
 
     let quotas = weights.map { Double(count) * $0 / totalWeight }
+    let present = incumbents ?? weights.map { _ in 0 }
     let byRemainder = quotas.indices.sorted { left, right in
         let leftRemainder = quotas[left] - quotas[left].rounded(.down)
         let rightRemainder = quotas[right] - quotas[right].rounded(.down)
-        return leftRemainder == rightRemainder ? left < right : leftRemainder > rightRemainder
+        guard leftRemainder == rightRemainder else { return leftRemainder > rightRemainder }
+        return present[left] == present[right] ? left < right : present[left] > present[right]
     }
 
     var shares = zip(quotas, capacities).map { min(Int($0), $1) }

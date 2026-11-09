@@ -15,9 +15,13 @@ struct TilePlan: Equatable {
     let notes: [String]
 }
 
-private enum RegionRules {
+enum RegionRules {
     /// A free region smaller than this terminal at the smallest comfortable font isn't worth using.
     static let smallestUsefulTerminal = CharGrid(columns: 40, rows: 12)
+
+    static func smallestUsefulRegion(_ metrics: TerminalMetrics) -> Size {
+        metrics.windowSize(for: smallestUsefulTerminal, font: FontLimits.autoMinimum)
+    }
 }
 
 /// Some windows being kept clear of, and the layout that leaves.
@@ -37,7 +41,11 @@ private enum SettlingRules {
 ///
 /// After a tile the terminals are in front of whatever they overlap, since any left behind an app
 /// get raised, so that's where they go in the simulated stack.
+///
+/// `tiledFrames` holds every terminal being arranged, on any screen, because all of them are about
+/// to move. `windowCount` is how many of them this display gets.
 func makeSettledTilePlan(
+    windowCount: Int? = nil,
     tiledFrames: [Rect],
     windowsFrontToBack windows: [ScreenWindow],
     terminalOwners: Set<String>,
@@ -48,7 +56,7 @@ func makeSettledTilePlan(
 ) -> TilePlan {
     func plan(_ stack: [ScreenWindow]) -> TilePlan {
         makeTilePlan(
-            windowCount: tiledFrames.count,
+            windowCount: windowCount ?? tiledFrames.count,
             display: display,
             mode: mode,
             otherApps: otherAppWindows(windowsFrontToBack: stack, display: display.visibleFrame, ignoringOwners: terminalOwners),
@@ -93,7 +101,7 @@ func makeTilePlan(
         return TilePlan(layout: whole, keptClear: [], covered: [], notes: [note] + sizeNotes(for: whole, metrics: metrics))
     }
 
-    let smallest = metrics.windowSize(for: RegionRules.smallestUsefulTerminal, font: FontLimits.autoMinimum)
+    let smallest = RegionRules.smallestUsefulRegion(metrics)
     func fit(_ regions: [Rect], _ font: FontChoice, _ minimum: CharGrid) -> LayoutPlan? {
         let layout = planLayout(windowCount: windowCount, regions: regions, font: font, metrics: metrics, minimum: minimum)
         return layout.meetsMinimum ? layout : nil

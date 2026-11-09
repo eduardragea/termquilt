@@ -8,7 +8,7 @@ struct TermquiltCLI: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "termquilt",
         abstract: "Arrange every terminal window into a tidy grid with one readable font.",
-        version: "0.2.0",
+        version: "0.3.0",
         subcommands: [Tile.self, Bigger.self, Smaller.self, Undo.self, Status.self, Hotkeys.self],
         defaultSubcommand: Tile.self
     )
@@ -34,7 +34,10 @@ enum LayoutFlag: String, EnumerableFlag {
 }
 
 struct TargetFlags: ParsableArguments {
-    @Option(help: "Where to put the terminals: laptop, external, a number from `status`, or part of a name.")
+    @Option(help: """
+    Put every terminal on one screen: laptop, external, a number from `status`, or part of a name. \
+    Remembered for this set of screens. "all" shares them across every screen again (the default).
+    """)
     var display: String?
 
     @Flag var layout: LayoutFlag?
@@ -69,7 +72,7 @@ func printLines(_ lines: [String]) {
 
 struct Tile: ParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Fill the free space on a display with every terminal window (the default command)."
+        abstract: "Arrange every terminal window into the free space on your screens (the default command)."
     )
 
     @Option(help: "Font size in points, remembered per display. Use \"auto\" to fit automatically again.")
@@ -116,7 +119,7 @@ struct Status: ParsableCommand {
         abstract: "List displays, their saved settings, terminal windows, and which apps a tile would avoid."
     )
 
-    @Option(help: "Report for this display: laptop, external, a number, or part of a name.")
+    @Option(help: "Report for this screen: laptop, external, a number, part of a name, or all.")
     var display: String?
 
     @Option(help: "Only count windows whose title contains this text.")
